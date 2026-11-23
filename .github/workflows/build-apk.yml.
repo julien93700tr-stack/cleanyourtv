@@ -1,0 +1,41 @@
+name: Build APK
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-34 build-tools;34.0.0
+      - name: Configure for my TV
+        run: |
+          python3 - <<'PY'
+          import re
+          p = "launcher/app/src/main/res/values/config.xml"
+          s = open(p, encoding="utf-8").read()
+          def arr(name, items):
+              global s
+              body = "\n".join("        <item>%s</item>" % i for i in items)
+              new = '<string-array name="%s">\n%s\n    </string-array>' % (name, body)
+              s, n = re.subn(r'<string-array name="%s"[^>]*>.*?</string-array>' % name, new, s, count=1, flags=re.S)
+              assert n == 1, name
+          arr("dock_apps", ["com.netflix.ninja", "com.amazon.amazonvideo.livingroom", "com.google.android.youtube.tv", "com.spotify.tv.android"])
+          arr("hidden_apps", ["com.tcl.tv"])
+          s, n = re.subn(r'(<string name="live_tv_package"[^>]*>)[^<]*(</string>)', r'\1com.tcl.tv\2', s, count=1)
+          assert n == 1
+          open(p, "w", encoding="utf-8").write(s)
+          PY
+      - name: Build
+        working-directory: launcher
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tv-launcher
+          path: launcher/app/build/outputs/apk/release/app-release.apk
